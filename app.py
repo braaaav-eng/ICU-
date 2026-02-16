@@ -263,10 +263,10 @@ def render_gamma_module():
                     display_secondary = f"{gamma:.3f} μg/kg/min"
 
             # render UI
-            st.markdown(f\"\"\"<div class=\"{card}\">
+            st.markdown(f"""<div class="{card}">
                 <div class='res-main'>{mg_h:.2f} mg/h</div>
                 <div class='res-sub'>{display_secondary}</div>
-                </div>\"\"\", unsafe_allow_html=True)
+                </div>""", unsafe_allow_html=True)
 
             if warning:
                 st.warning(warning)
@@ -422,10 +422,10 @@ def render_shock_module():
             if shock_flag and lactate_flag:
                 severity = "高"
 
-            st.markdown(f\"\"\"<div class='result-card-red'>
+            st.markdown(f"""<div class='result-card-red'>
                 <div class='res-main'>ショック可能性: {severity}</div>
                 <div class='res-sub'>疑い: {', '.join(possibilities)}</div>
-                </div>\"\"\", unsafe_allow_html=True)
+                </div>""", unsafe_allow_html=True)
 
             st.info(f"MAP: {map_val:.1f} mmHg | Lactate: {lactate:.2f} mmol/L")
             st.write("推奨アクション: " + (" → ".join(actions) if actions else "観察/追加検査"))
