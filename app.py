@@ -68,23 +68,24 @@ DRUG_PRESETS = {
 # ==========================================
 if "initialized" not in st.session_state:
     st.session_state.update({
+        # γ（文字列で初期化して空欄を許容）
         "gamma_preset": "カスタム",
-        "gamma_mg": 0.0,
-        "gamma_ml": 0.0,
-        "gamma_flow": 0.0,
-        "gamma_weight": 0.0,
-        # CCr
-        "ccr_age": 60,
-        "ccr_weight": 50.0,
-        "ccr_scr": 1.0,
+        "gamma_mg_str": "",     # テキスト入力で空欄開始
+        "gamma_ml_str": "",
+        "gamma_flow_str": "",
+        "gamma_wt_str": "",
+        # CCr（同様に空欄）
+        "ccr_age_str": "",
+        "ccr_weight_str": "",
+        "ccr_scr_str": "",
         "ccr_sex": "男性",
-        # Acid/base
-        "ab_ph": 7.40,
-        "ab_pco2": 40.0,
-        "ab_hco3": 24.0,
-        "ab_na": 140.0,
-        "ab_cl": 100.0,
-        "ab_alb": 4.0,
+        # Acid/base (pHは特別扱い、初期は空)
+        "ab_ph_str": "",
+        "ab_pco2_str": "",
+        "ab_hco3_str": "",
+        "ab_na_str": "",
+        "ab_cl_str": "",
+        "ab_alb_str": "",
         # Draft save name
         "draft": None
     })
@@ -96,15 +97,31 @@ def preset_apply_to_session(preset_key):
     This writes preset mg/ml defaults into session_state values used by form inputs.
     """
     data = DRUG_PRESETS.get(preset_key, {"mg":0.0, "ml":0.0})
-    # store as floats/strings consistent with number_input initial values
-    st.session_state["gamma_mg"] = float(data.get("mg", 0.0))
-    st.session_state["gamma_ml"] = float(data.get("ml", 0.0))
+    # Convert to string for text_input, handle 0.0 specially if needed, but here simple str()
+    # If the preset has 0.0, we might want to leave it empty or show "0.0". 
+    # Usually presets have values.
+    st.session_state["gamma_mg_str"] = str(data.get("mg", ""))
+    st.session_state["gamma_ml_str"] = str(data.get("ml", ""))
 
-def safe_float(val):
+def safe_parse_number(s: str, default=None):
+    """
+    テキスト入力用の安全パーサー。
+    - 空欄 -> None（必須チェックで扱いやすくする）
+    - 数字を返す場合は float を返す
+    - 小数点桁制御は呼び出し側で round() を行う
+    """
+    if s is None: 
+        return default
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = str(s).strip()
+    if s == "":
+        return None
     try:
-        return float(val)
+        v = float(s.replace(",", ""))  # カンマ対応
+        return v
     except:
-        return 0.0
+        return default
 
 # ==========================================
 # 🎨 Styles & Scripts
@@ -118,7 +135,7 @@ st.markdown("""
         max-width: 600px;
     }
     /* 2. Form & Inputs */
-    .stNumberInput input { font-size: 16px !important; }
+    .stTextInput input { font-size: 16px !important; }
     .stSelectbox div { font-size: 16px !important; }
     
     /* 3. Result Cards */
@@ -143,15 +160,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Experimental JS for InputMode (Optional)
+# optional: make text inputs show numeric keyboard on mobile when possible (experimental)
 st.markdown("""
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(function(){
-        const inputs = document.querySelectorAll('input[type="number"]');
-        inputs.forEach(i => i.setAttribute('inputmode', 'decimal'));
-    }, 1000);
-});
+setTimeout(function(){
+    // set inputmode for inputs that appear to be numeric placeholders
+    document.querySelectorAll('input[type="text"]').forEach(function(inp){
+        // heuristic: inputs with placeholder containing digits or specific labels
+        if (inp.placeholder && inp.placeholder.match(/[0-9]/)) {
+            inp.setAttribute('inputmode','decimal');
+            inp.setAttribute('pattern','[0-9]*');
+        }
+    });
+}, 800);
 </script>
 """, unsafe_allow_html=True)
 
@@ -198,7 +219,7 @@ def calc_feurea(p_urea, u_urea, p_cr, u_cr):
 def render_gamma_module():
     st.header("💉 γ計算 (持続投与)")
 
-    # preset selector outside form so we can set defaults into session_state immediately
+    # Preset selector outside form to apply defaults into session_state if user wants
     preset = st.selectbox("薬剤プリセット", list(DRUG_PRESETS.keys()),
                           index=list(DRUG_PRESETS.keys()).index(st.session_state.get("gamma_preset","カスタム")))
     if preset != st.session_state.get("gamma_preset"):
@@ -206,120 +227,146 @@ def render_gamma_module():
         preset_apply_to_session(preset)
 
     with st.form("gamma_form"):
-        # initial values from session_state ensure preset values are shown
-        drug_mg = st.number_input("薬剤総量 (mg)", min_value=0.0, format="%.2f", value=float(st.session_state.get("gamma_mg",0.0)), key="form_drug_mg")
-        sol_ml = st.number_input("溶解総量 (mL)", min_value=0.0, format="%.1f", value=float(st.session_state.get("gamma_ml",0.0)), key="form_sol_ml")
-        flow = st.number_input("投与速度 (mL/h)", min_value=0.0, format="%.1f", value=float(st.session_state.get("gamma_flow",0.0)), key="form_flow")
-        use_wt = st.checkbox("体重で換算する", value=(st.session_state.get("gamma_weight",0.0)>0))
+        # Use text_input to allow empty default; show placeholders with typical values
+        mg_str = st.text_input("薬剤総量 (mg)", value=st.session_state.get("gamma_mg_str",""), placeholder="例: 5")
+        ml_str = st.text_input("溶解総量 (mL)", value=st.session_state.get("gamma_ml_str",""), placeholder="例: 50")
+        flow_str = st.text_input("投与速度 (mL/h)", value=st.session_state.get("gamma_flow_str",""), placeholder="例: 3.0")
+        use_wt = st.checkbox("体重で換算する", value=(st.session_state.get("gamma_wt_str","")!=""))
+        wt_str = ""
         if use_wt:
-            wt = st.number_input("体重 (kg)", min_value=0.0, format="%.1f", value=float(st.session_state.get("gamma_weight",0.0)), key="form_wt")
-        else:
-            wt = None
+            wt_str = st.text_input("体重 (kg)", value=st.session_state.get("gamma_wt_str",""), placeholder="例: 50")
 
         submitted = st.form_submit_button("計算")
 
+    # Save back to session_state (so next open keeps last manual entries)
+    if mg_str is not None: st.session_state["gamma_mg_str"] = mg_str
+    if ml_str is not None: st.session_state["gamma_ml_str"] = ml_str
+    if flow_str is not None: st.session_state["gamma_flow_str"] = flow_str
+    if wt_str is not None: st.session_state["gamma_wt_str"] = wt_str
+
     if submitted:
-        try:
-            if drug_mg <= 0 or sol_ml <= 0 or flow <= 0:
-                st.error("薬剤量・溶解量・流量は0より大きい値を入力してください。")
-                return
+        # parse
+        drug_mg = safe_parse_number(mg_str)
+        sol_ml = safe_parse_number(ml_str)
+        flow = safe_parse_number(flow_str)
+        wt = safe_parse_number(wt_str)
 
-            conc = drug_mg / sol_ml
-            mg_h = flow * conc
-            gamma = None
-            if wt and wt > 0:
-                gamma = (mg_h * 1000) / (wt * 60)  # μg/kg/min
+        # validation
+        if drug_mg is None or sol_ml is None or flow is None:
+            st.error("薬剤量・溶解量・投与速度をすべて入力してください（空欄は不可）。")
+            return
 
-            # display formatting
-            display_secondary = ""
-            # lookup threshold config
-            cfg = GAMMA_THRESHOLDS.get(preset)
-            warning = None
-            card = "result-card-green"
+        # Round inputs to sensible precision
+        drug_mg = round(drug_mg, 1)   # mg は小数1位で十分
+        sol_ml = round(sol_ml, 1)     # mL は小数1位
+        flow = round(flow, 1)         # mL/h 小数1位
 
+        conc = drug_mg / sol_ml
+        mg_h = flow * conc
+        gamma = None
+        if wt and wt > 0:
+            wt = round(wt, 1)  # 体重は小数1位
+            gamma = (mg_h * 1000) / (wt * 60)  # μg/kg/min
+
+        # threshold check and display
+        cfg = GAMMA_THRESHOLDS.get(preset)
+        card = "result-card-green"
+        warning = None
+        display_secondary = ""
+
+        if gamma is not None and cfg:
+            # handle types
+            if cfg["type"] == "ug/kg/h":
+                if gamma * 60 > cfg["threshold"]:
+                    warning = f"注意: {preset} の閾値 {cfg['threshold']} μg/kg/h を超えています"
+                    card = "result-card-yellow"
+                display_secondary = f"{gamma*60:.2f} μg/kg/h (= {gamma:.3f} μg/kg/min)"
+            elif cfg["type"] == "ug/kg/min":
+                if gamma > cfg["threshold"]:
+                    warning = f"注意: {preset} の閾値 {cfg['threshold']} μg/kg/min を超えています"
+                    card = "result-card-yellow"
+                display_secondary = f"{gamma:.3f} μg/kg/min"
+            elif cfg["type"] == "mg/kg/h":
+                mgkg_h = (mg_h / wt) if (wt and wt>0) else None
+                if mgkg_h and mgkg_h > cfg["threshold"]:
+                    warning = f"注意: {preset} の閾値 {cfg['threshold']} mg/kg/h を超えています"
+                    card = "result-card-yellow"
+                display_secondary = f"{(mg_h / wt if wt and wt>0 else 0):.3f} mg/kg/h"
+        else:
+            # no weight -> show mg/h only
+            display_secondary = "(体重未入力のため γは未表示) "
+
+        # Show results (keep main display minimal to reduce DOM cost)
+        st.markdown(f"""
+        <div class="{card}">
+            <div class='res-main'>{mg_h:.2f} mg/h</div>
+            <div class='res-sub'>{display_secondary}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if warning:
+            st.warning(warning)
+
+        with st.expander("計算根拠（詳細）"):
+            st.write(f"濃度: {conc:.4f} mg/mL")
+            st.write(f"式 (mg/h) = {flow} mL/h × {conc:.4f} mg/mL")
             if gamma is not None:
-                if cfg:
-                    if cfg["type"] == "ug/kg/h":
-                        # threshold in ug/kg/h, gamma is ug/kg/min
-                        if gamma * 60 > cfg["threshold"]:
-                            warning = f"注意: {preset} の閾値 {cfg['threshold']} μg/kg/h を超えています"
-                            card = "result-card-yellow"
-                    elif cfg["type"] == "ug/kg/min":
-                        if gamma > cfg["threshold"]:
-                            warning = f"注意: {preset} の閾値 {cfg['threshold']} μg/kg/min を超えています"
-                            card = "result-card-yellow"
-                    elif cfg["type"] == "mg/kg/h":
-                        mgkg_h = mg_h / wt if wt and wt>0 else None
-                        if mgkg_h and mgkg_h > cfg["threshold"]:
-                            warning = f"注意: {preset} の閾値 {cfg['threshold']} mg/kg/h を超えています"
-                            card = "result-card-yellow"
-
-                # construct secondary display
-                if "Dexmedetomidine" in preset or (cfg and cfg["type"]=="ug/kg/h"):
-                    display_secondary = f"{gamma*60:.2f} μg/kg/h (= {gamma:.3f} μg/kg/min)"
-                elif cfg and cfg["type"]=="mg/kg/h":
-                    display_secondary = f"{(mg_h / wt if wt and wt>0 else 0):.3f} mg/kg/h"
-                else:
-                    display_secondary = f"{gamma:.3f} μg/kg/min"
-
-            # render UI
-            st.markdown(f"""<div class="{card}">
-                <div class='res-main'>{mg_h:.2f} mg/h</div>
-                <div class='res-sub'>{display_secondary}</div>
-                </div>""", unsafe_allow_html=True)
-
-            if warning:
-                st.warning(warning)
-
-            with st.expander("計算根拠"):
-                st.write(f"濃度: {conc:.4f} mg/mL")
-                st.write(f"式 (mg/h) = {flow} mL/h × {conc:.4f} mg/mL")
-                if gamma is not None:
-                    st.write(f"γ = ({mg_h:.4f} mg/h × 1000) / ({wt} kg × 60) = {gamma:.4f} μg/kg/min")
-        except Exception as e:
-            st.error(f"計算中にエラー: {str(e)}")
+                st.write(f"γ = ({mg_h:.4f} mg/h × 1000) / ({wt} kg × 60) = {gamma:.4f} μg/kg/min")
 
 
 def render_ccr_module():
     st.header("🧪 CCr (Cockcroft-Gault)")
-    
+
     with st.form("ccr_form"):
-        c1, c2 = st.columns(2)
-        age = c1.number_input("年齢 (歳)", min_value=0, step=1, value=60)
-        wt = c2.number_input("体重 (kg)", min_value=0.0, step=0.1, value=50.0)
-        scr = st.number_input("Scr (mg/dL)", min_value=0.0, step=0.01, value=1.0)
+        age_str = st.text_input("年齢 (歳)", value=st.session_state.get("ccr_age_str",""), placeholder="例: 65")
+        wt_str = st.text_input("体重 (kg)", value=st.session_state.get("ccr_weight_str",""), placeholder="例: 55.0")
+        scr_str = st.text_input("Scr (mg/dL)", value=st.session_state.get("ccr_scr_str",""), placeholder="例: 0.9")
         sex = st.radio("性別", ["男性", "女性"], horizontal=True)
-        
-        submitted = st.form_submit_button("計算", type="primary", use_container_width=True)
-        
+        submitted = st.form_submit_button("計算")
+
+    # persist
+    st.session_state["ccr_age_str"] = age_str
+    st.session_state["ccr_weight_str"] = wt_str
+    st.session_state["ccr_scr_str"] = scr_str
+
     if submitted:
-        try:
-            if scr <= 0:
-                st.error("Scrは0より大きい必要があります")
-            else:
-                val = calc_ccr(age, wt, scr, sex)
-                
-                cat = "正常 (>60)"
-                col = "result-card-green"
-                if val < 30:
-                    cat = "高度低下 (<30)"
-                    col = "result-card-red"
-                elif val < 60:
-                    cat = "中等度低下 (30-60)"
-                    col = "result-card-yellow"
-                    
-                st.markdown(f"""
-                <div class="{col}">
-                    <div class="res-main">{val:.1f} mL/min</div>
-                    <div class="res-sub">{cat}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.expander("計算式"):
-                    st.write("((140 - Age) * Wt) / (72 * Scr)")
-                    if sex=="女性": st.write("× 0.85 (女性補正)")
-        except Exception as e:
-            st.error(f"Error: {e}")
+        age = safe_parse_number(age_str)
+        wt = safe_parse_number(wt_str)
+        scr = safe_parse_number(scr_str)
+
+        if age is None or wt is None or scr is None:
+            st.error("年齢・体重・Scr をすべて入力してください。")
+            return
+
+        # round sensible precision
+        age = int(round(age))
+        wt = round(wt, 1)
+        scr = round(scr, 2)
+
+        val = calc_ccr(age, wt, scr, sex)
+        if val is None:
+            st.error("計算できません（Scrは0より大きい値が必要）")
+            return
+
+        cat = "正常 (>60)"
+        col = "result-card-green"
+        if val < 30:
+            cat = "高度低下 (<30)"
+            col = "result-card-red"
+        elif val < 60:
+            cat = "中等度低下 (30-60)"
+            col = "result-card-yellow"
+
+        st.markdown(f"""
+        <div class="{col}">
+            <div class="res-main">{val:.1f} mL/min</div>
+            <div class="res-sub">{cat}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.expander("計算式"):
+            st.write("((140 - Age) * Wt) / (72 * Scr)")
+            if sex=="女性": st.write("× 0.85 (女性補正)")
 
 
 def render_ab_module():
@@ -600,9 +647,9 @@ def render_export_import():
     # Dump session state to json
     # Filter only relevant keys to avoid internal Streamlit clutter
     export_keys = [
-        "gamma_preset", "gamma_mg", "gamma_ml", "gamma_flow", "gamma_weight",
-        "ccr_age", "ccr_weight", "ccr_scr", "ccr_sex",
-        "ab_ph", "ab_pco2", "ab_hco3", "ab_na", "ab_cl", "ab_alb"
+        "gamma_preset", "gamma_mg_str", "gamma_ml_str", "gamma_flow_str", "gamma_wt_str",
+        "ccr_age_str", "ccr_weight_str", "ccr_scr_str", "ccr_sex",
+        "ab_ph_str", "ab_pco2_str", "ab_hco3_str", "ab_na_str", "ab_cl_str", "ab_alb_str"
     ]
     data = {k: st.session_state.get(k) for k in export_keys}
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
