@@ -1,8 +1,8 @@
 import streamlit as st
-import math
+import streamlit.components.v1 as components
 
 # ==========================================
-# ⚙️ Configuration & Styles
+# ⚙️ Configuration & Constants
 # ==========================================
 st.set_page_config(
     page_title="ICU Tool",
@@ -11,568 +11,511 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Initialize Session State
-if "init_done" not in st.session_state:
-    st.session_state["gamma_mg_input"] = ""
-    st.session_state["gamma_ml_input"] = ""
-    st.session_state["gamma_flow_input"] = ""
-    st.session_state["gamma_weight_input"] = ""
-    st.session_state["init_done"] = True
+# ------------------------------------------
+# 📊 Clinical Thresholds (Editable)
+# ------------------------------------------
 
-# Custom CSS & JS for Mobile Optimization
+# Gamma Module Thresholds (Upper limit warning)
+GAMMA_THRESHOLDS = {
+    "Norepinephrine (NAD)": 0.3, # J-SSCG2020: 0.05-0.3
+    "Dobutamine (DOB)": 10.0,
+    "Dopamine (DOA)": 10.0,
+    "Nicardipine": 6.0, 
+    "Midazolam": 0.2, # mg/kg/h
+    "Propofol": 3.0,  # mg/kg/h
+    "Dexmedetomidine": 0.7, # ug/kg/h
+    "Nitroglycerin": 5.0, # usually start 0.1-0.5
+    "Carperitide": 0.1
+}
+
+# Forrester Classification Thresholds
+FORRESTER_CI_THRESH = 2.2 # L/min/m2
+FORRESTER_PCWP_THRESH = 18.0 # mmHg
+
+# ------------------------------------------
+# 🩹 Session Initialization (Robust)
+# ------------------------------------------
+INITIAL_KEYS = [
+    "gamma_mg", "gamma_ml", "gamma_flow", "gamma_weight",
+    "ccr_age", "ccr_weight", "ccr_scr",
+    "ab_ph", "ab_pco2", "ab_hco3", "ab_na", "ab_cl", "ab_alb",
+    "hf_pcwp", "hf_ci", "hf_sbp"
+]
+
+for key in INITIAL_KEYS:
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
+# ==========================================
+# 🎨 UI/UX & Scripts
+# ==========================================
+
+# Custom CSS
 st.markdown("""
 <style>
-    /* Global Mobile Tweaks */
+    /* 1. Fix Safari Top Spacing */
     .block-container {
-        padding-top: 1rem;
-        padding-bottom: 3rem;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
+        padding-top: 2.5rem !important;
+        padding-bottom: 5rem !important;
     }
     
-    /* Input Styling for touch targets */
-    .stTextInput input {
-        font-size: 16px; /* Prevent zoom on iOS */
+    /* Mobile Input Sizing */
+    .stTextInput input, .stNumberInput input {
+        font-size: 16px !important; /* iOS Zoom prevention */
         padding: 0.8rem;
     }
     
-    /* Result Card Styling */
+    /* Result Cards */
     .result-card-green {
-        background-color: #d1fae5;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 6px solid #10b981;
-        margin-bottom: 1rem;
+        background-color: #d1fae5; padding: 1rem; border-radius: 8px; border-left: 6px solid #10b981; margin: 1rem 0;
     }
     .result-card-yellow {
-        background-color: #fef3c7;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 6px solid #f59e0b;
-        margin-bottom: 1rem;
+        background-color: #fef3c7; padding: 1rem; border-radius: 8px; border-left: 6px solid #f59e0b; margin: 1rem 0;
     }
     .result-card-red {
-        background-color: #fee2e2;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 6px solid #ef4444;
-        margin-bottom: 1rem;
+        background-color: #fee2e2; padding: 1rem; border-radius: 8px; border-left: 6px solid #ef4444; margin: 1rem 0;
     }
     
-    /* Typography */
-    .result-main {
-        font-size: 1.6rem;
-        font-weight: 800;
-        color: #1f2937;
-        line-height: 1.3;
-    }
-    .result-sub {
-        font-size: 1.1rem;
-        font-weight: 700;
-        color: #374151;
-        margin-top: 0.3rem;
-    }
-    .result-ref {
-        font-size: 0.85rem;
-        color: #6b7280;
-        margin-top: 0.5rem;
-        font-style: italic;
-    }
+    .result-main { font-size: 1.5rem; font-weight: 800; color: #1f2937; line-height: 1.2; }
+    .result-sub { font-size: 1.1rem; font-weight: 700; color: #374151; margin-top: 0.3rem; }
+    .result-ref { font-size: 0.85rem; color: #6b7280; font-style: italic; margin-top: 5px; }
+
+    /* Hide Footer */
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     
-    /* Vertical Radio Buttons (Mobile Friendly) */
-    .stRadio div[role="radiogroup"] {
-        flex-direction: column;
-    }
+    /* Navigation Tabs as Buttons (Radio) */
+    .stRadio div[role="radiogroup"] { flex-direction: column; }
     .stRadio div[role="radiogroup"] > label {
-        background-color: #f3f4f6;
-        padding: 12px 20px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        border: 1px solid #e5e7eb;
-        width: 100%;
+        padding: 12px; margin-bottom: 8px; border-radius: 8px;
+        background: #f3f4f6; border: 1px solid #e5e7eb;
     }
     .stRadio div[role="radiogroup"] > label[data-checked="true"] {
-        background-color: #eff6ff;
-        border-color: #3b82f6;
-        color: #3b82f6;
-        font-weight: bold;
+        background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; font-weight: bold;
     }
-    
-    /* Hide footer */
-    footer {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
 </style>
-
-<!-- JS: iOS Numeric Keyboard Trigger -->
-<script>
-    setTimeout(function(){
-        const inputs = document.querySelectorAll('input[type="text"]');
-        inputs.forEach(i => {
-            if(i.placeholder && i.placeholder.includes('例:')) {
-                i.setAttribute('inputmode', 'decimal');
-            }
-        });
-    }, 500);
-</script>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 📚 Data & Constants
-# ==========================================
+# JS Injection for UX (Inputmode & Enter key nav)
+jquery_script = """
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // 1. Set inputmode='decimal' for numeric text inputs
+        const inputs = document.querySelectorAll('input[type="text"]');
+        inputs.forEach((input, index) => {
+            if (input.placeholder && input.placeholder.includes('例:')) {
+                input.setAttribute('inputmode', 'decimal');
+                input.setAttribute('tabindex', index + 1); // Set proper tab index
+            }
+        });
 
-# 閾値定義 (γ = μg/kg/min)
-# Dexmedetomidine は例外的に μg/kg/h で判定したいが、統一ロジックのため変換して扱うか個別対応
-GAMMA_THRESHOLDS = {
-    "Norepinephrine (NAD)": 0.5, # >0.5γで注意
-    "Dobutamine (DOB)": 10.0,
-    "Dopamine (DOA)": 10.0,
-    "Nicardipine": 10.0, 
-    "Midazolam": None,  # mg/kg/h
-    "Propofol": None,   # mg/kg/h
-    "Dexmedetomidine": None, # ug/kg/h
-    "Nitroglycerin": 5.0,
-    "Carperitide": 0.2
-}
+        // 2. Add Enter key navigation
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                const activeElement = document.activeElement;
+                if (activeElement.tagName === 'INPUT' && activeElement.type === 'text') {
+                    const currentTabIndex = parseInt(activeElement.getAttribute('tabindex'));
+                    if (!isNaN(currentTabIndex)) {
+                        const nextElement = document.querySelector(`input[tabindex="${currentTabIndex + 1}"]`);
+                        if (nextElement) {
+                            nextElement.focus();
+                            event.preventDefault(); // Prevent accidental submission
+                        }
+                    }
+                }
+            }
+        });
+    });
+    
+    // Fallback for simple re-runs
+    setTimeout(function(){
+        const inputs = document.querySelectorAll('input[type="text"]');
+        inputs.forEach((input, index) => {
+            if (input.placeholder && input.placeholder.includes('例:')) {
+                input.setAttribute('inputmode', 'decimal');
+                input.setAttribute('tabindex', index + 1);
+            }
+        });
+    }, 800);
+</script>
+"""
+components.html(jquery_script, height=0, width=0)
 
-# 薬剤プリセット定義 (数値型)
-# value: {mg, ml, ref_range_txt, source}
+
+# ==========================================
+# 🛠 Helpers
+# ==========================================
+def safe_float(val):
+    if not val or val.strip() == "": return None
+    try:
+        return float(val)
+    except:
+        return None
+
+# ==========================================
+# 💉 Module 1: Gamma
+# ==========================================
 DRUG_PRESETS = {
-    "カスタム": {
-        "mg": None, "ml": None, 
-        "ref": None, "source": None
-    },
+    "カスタム": {"mg": None, "ml": None, "ref": None, "source": None},
     "Norepinephrine (NAD)": {
         "mg": 5.0, "ml": 50.0, 
-        "ref": "0.05 - 0.3 μg/kg/min", 
-        "source": "日本版敗血症診療GL2020"
+        "ref": "0.05 - 0.3 μg/kg/min", "source": "日本版敗血症診療GL2020"
     },
     "Dobutamine (DOB)": {
-        "mg": 150.0, "ml": 50.0, 
-        "ref": "1 - 10 μg/kg/min", 
-        "source": "添付文書"
+        "mg": 150.0, "ml": 50.0, "ref": "1 - 10 μg/kg/min", "source": "添付文書"
     },
     "Dopamine (DOA)": {
-        "mg": 150.0, "ml": 50.0, 
-        "ref": "3 - 10 μg/kg/min", 
-        "source": "添付文書"
+        "mg": 150.0, "ml": 50.0, "ref": "3 - 10 μg/kg/min", "source": "添付文書"
     },
     "Nicardipine": {
-        "mg": 50.0, "ml": 50.0, 
-        "ref": "0.5 - 6 μg/kg/min (2-10 mg/h)", 
-        "source": "高血圧治療GL"
+        "mg": 50.0, "ml": 50.0, "ref": "0.5 - 6 μg/kg/min", "source": "高血圧治療GL"
     },
     "Midazolam": {
-        "mg": 50.0, "ml": 50.0, 
-        "ref": "0.03 - 0.2 mg/kg/h", 
-        "source": "PADISガイドライン"
+        "mg": 50.0, "ml": 50.0, "ref": "0.03 - 0.2 mg/kg/h", "source": "PADISガイドライン"
     },
     "Propofol": {
-        "mg": 1000.0, "ml": 100.0, 
-        "ref": "0.3 - 3.0 mg/kg/h", 
-        "source": "添付文書"
+        "mg": 1000.0, "ml": 100.0, "ref": "0.3 - 3.0 mg/kg/h", "source": "添付文書"
     },
     "Dexmedetomidine": {
-        "mg": 0.2, "ml": 50.0, # 200mcg = 0.2mg
-        "ref": "0.2 - 0.7 μg/kg/h", 
-        "source": "添付文書"
+        "mg": 0.2, "ml": 50.0, "ref": "0.2 - 0.7 μg/kg/h", "source": "添付文書"
     },
     "Nitroglycerin": {
-        "mg": 50.0, "ml": 100.0, 
-        "ref": "0.5 - 20 μg/kg/min", 
-        "source": "添付文書"
+        "mg": 50.0, "ml": 100.0, "ref": "0.5 - 20 μg/kg/min", "source": "添付文書"
     },
     "Carperitide": {
-        "mg": 3.0, "ml": 50.0, # 3000mcg
-        "ref": "0.05 - 0.1 μg/kg/min", 
-        "source": "心不全診療GL"
+        "mg": 3.0, "ml": 50.0, "ref": "0.05 - 0.1 μg/kg/min", "source": "心不全診療GL"
     }
 }
 
-# ==========================================
-# 🛠 Helper Functions
-# ==========================================
-def safe_float(value_str):
-    """Convert string to float. Returns None if empty/invalid/zero."""
-    if not value_str or not isinstance(value_str, str) or value_str.strip() == "":
-        return None
-    try:
-        val = float(value_str)
-        return val # Allow 0 return, handle logic outside
-    except ValueError:
-        return None
+def on_gamma_preset():
+    sel = st.session_state.gamma_preset
+    if sel in DRUG_PRESETS and DRUG_PRESETS[sel]["mg"] is not None:
+        st.session_state.gamma_mg = str(DRUG_PRESETS[sel]["mg"])
+        st.session_state.gamma_ml = str(DRUG_PRESETS[sel]["ml"])
 
-def on_preset_change():
-    """Callback to update session state when preset changes."""
-    selected = st.session_state.get("gamma_preset_selector", "カスタム")
-    
-    if selected in DRUG_PRESETS:
-        data = DRUG_PRESETS[selected]
-        # 数値を文字列に変換してInputにセット
-        if data["mg"] is not None:
-            st.session_state["gamma_mg_input"] = str(data["mg"])
-        if data["ml"] is not None:
-            st.session_state["gamma_ml_input"] = str(data["ml"])
-    
-    # Force rerun (sometimes needed in older streamlit, but safe to ignore if state works)
-
-# ==========================================
-# 📱 1. Gamma Module
-# ==========================================
 def render_gamma():
-    st.markdown("### 💉 γ計算 (持続投与)")
+    st.markdown("## 💉 γ計算")
     
-    # 1. Preset Selector
-    st.selectbox(
-        "薬剤プリセット", 
-        options=list(DRUG_PRESETS.keys()),
-        index=0,
-        key="gamma_preset_selector",
-        on_change=on_preset_change
-    )
+    st.selectbox("薬剤選択", list(DRUG_PRESETS.keys()), key="gamma_preset", on_change=on_gamma_preset)
     
-    # 2. Inputs
-    # drug_mg
-    st.text_input("薬剤総量 (mg)", key="gamma_mg_input", placeholder="例: 5")
-    drug_mg = safe_float(st.session_state.gamma_mg_input)
+    # Inputs
+    c1, c2 = st.columns(2)
+    c1.text_input("薬剤量 (mg)", key="gamma_mg", placeholder="例: 5")
+    c2.text_input("溶解量 (mL)", key="gamma_ml", placeholder="例: 50")
+    st.text_input("投与速度 (mL/h)", key="gamma_flow", placeholder="例: 3.0")
     
-    # sol_ml
-    st.text_input("溶解総量 (mL)", key="gamma_ml_input", placeholder="例: 50")
-    sol_ml = safe_float(st.session_state.gamma_ml_input)
-    
-    # flow rate
-    st.text_input("投与速度 (mL/h)", key="gamma_flow_input", placeholder="例: 3.0")
-    flow_mlh = safe_float(st.session_state.gamma_flow_input)
-    
-    # weight toggle
-    use_weight = st.checkbox("体重で換算する", value=False)
-    weight_kg = None
+    use_weight = st.checkbox("体重換算 (kg)", value=False)
     if use_weight:
-        st.text_input("体重 (kg)", key="gamma_weight_input", placeholder="例: 50")
-        weight_kg = safe_float(st.session_state.gamma_weight_input)
+        st.text_input("体重 (kg)", key="gamma_weight", placeholder="例: 50")
 
-    # 3. Calculation Logic
-    if st.button("計算実行", type="primary", use_container_width=True):
+    if st.button("計算", type="primary", use_container_width=True):
+        mg = safe_float(st.session_state.gamma_mg)
+        ml = safe_float(st.session_state.gamma_ml)
+        flow = safe_float(st.session_state.gamma_flow)
+        wt = safe_float(st.session_state.gamma_weight) if use_weight else None
         
         # Validation
-        errors = []
-        if drug_mg is None: errors.append("薬剤総量(mg)を入力してください")
-        elif drug_mg <= 0: errors.append("薬剤総量は0より大きい値を入力してください")
-        
-        if sol_ml is None: errors.append("溶解総量(mL)を入力してください")
-        elif sol_ml <= 0: errors.append("溶解総量は0より大きい値を入力してください")
-        
-        if flow_mlh is None: errors.append("投与速度(mL/h)を入力してください")
-        elif flow_mlh <= 0: errors.append("投与速度は0より大きい値を入力してください")
-        
-        if use_weight and (weight_kg is None or weight_kg <= 0):
-            errors.append("体重(kg)を正しく入力してください")
-
-        if errors:
-            for e in errors: st.error(e)
+        if None in [mg, ml, flow]:
+            st.error("数値を入力してください")
+            return
+        if mg <= 0 or ml <= 0 or flow <= 0:
+            st.error("0以下の値は無効です")
             return
             
-        # Basic Calculation
-        conc_mg_ml = drug_mg / sol_ml
-        dose_mg_h = flow_mlh * conc_mg_ml
-        dose_gamma = None
+        # Calculation
+        dose_mg_h = flow * (mg / ml)
         
-        # Unit Logic
-        preset_name = st.session_state.gamma_preset_selector
-        preset_info = DRUG_PRESETS[preset_name]
+        # Output Generation
+        preset_name = st.session_state.gamma_preset
+        preset_data = DRUG_PRESETS[preset_name]
         is_dex = "Dexmedetomidine" in preset_name
-        is_propofol = "Propofol" in preset_name
-        is_midazolam = "Midazolam" in preset_name
+        is_prop = "Propofol" in preset_name
+        is_mid = "Midazolam" in preset_name
         
-        # HTML Components
-        res_main = f"{dose_mg_h:.2f} <span style='font-size:1rem'>mg/h</span>"
-        res_sub_list = []
-        
-        if weight_kg:
-            # Standard Gamma: μg/kg/min
-            dose_gamma = (dose_mg_h * 1000) / (weight_kg * 60)
-            
-            # Alternative Units
-            dose_mcg_kg_h = (dose_mg_h * 1000) / weight_kg
-            dose_mg_kg_h = dose_mg_h / weight_kg
-
-            if is_dex:
-                # Dex: Show μg/kg/h AND γ
-                res_sub_list.append(f"{dose_mcg_kg_h:.2f} <span style='font-size:0.9rem'>μg/kg/h</span>")
-                res_sub_list.append(f"<span style='color:#666; font-size:0.8rem'>({dose_gamma:.3f} γ)</span>")
-            elif is_propofol or is_midazolam:
-                 # Propofol/Midazolam: mg/kg/h
-                 res_sub_list.append(f"{dose_mg_kg_h:.2f} <span style='font-size:0.9rem'>mg/kg/h</span>")
-            else:
-                # Default: gamma
-                res_sub_list.append(f"{dose_gamma:.2f} <span style='font-size:0.9rem'>μg/kg/min</span>")
-
-        # Threshold Check & Warnings
-        card_color = "result-card-green"
+        main_text = f"{dose_mg_h:.2f} mg/h"
+        sub_text = ""
         warnings = []
+        card_class = "result-card-green"
         
-        # 1. Preset based threshold
-        thresh = GAMMA_THRESHOLDS.get(preset_name)
-        if thresh and dose_gamma and dose_gamma > thresh:
-            warnings.append(f"⚠️ {preset_name}の高用量域の可能性があります (> {thresh})")
-            card_color = "result-card-yellow"
+        if wt and wt > 0:
+            gamma = (dose_mg_h * 1000) / (wt * 60)
             
-        # 2. Generic Extreme check
-        if dose_mg_h > 2000: # Slightly relaxed
-            warnings.append("⚠️ 投与量が極端に高値です (確認推奨)")
-            card_color = "result-card-yellow"
-        if dose_gamma and dose_gamma > 20.0: # Generic gamma cap
-            warnings.append("⚠️ γ値が極端に高値です")
-            card_color = "result-card-yellow"
-
-        # Reference Text
+            # Unit logic
+            if is_dex:
+                mcg_kg_h = (dose_mg_h * 1000) / wt
+                sub_text = f"{mcg_kg_h:.2f} μg/kg/h <br><span style='font-size:0.9rem; color:#666'>({gamma:.3f} γ)</span>"
+                # Check threshold (ug/kg/h)
+                if GAMMA_THRESHOLDS["Dexmedetomidine"] and mcg_kg_h > GAMMA_THRESHOLDS["Dexmedetomidine"]:
+                    warnings.append(f"高用量注意 (> {GAMMA_THRESHOLDS['Dexmedetomidine']} μg/kg/h)")
+            elif is_prop or is_mid:
+                mg_kg_h = dose_mg_h / wt
+                sub_text = f"{mg_kg_h:.2f} mg/kg/h"
+                key = "Propofol" if is_prop else "Midazolam"
+                if GAMMA_THRESHOLDS[key] and mg_kg_h > GAMMA_THRESHOLDS[key]:
+                    warnings.append(f"高用量注意 (> {GAMMA_THRESHOLDS[key]} mg/kg/h)")
+            else:
+                sub_text = f"{gamma:.2f} μg/kg/min"
+                if preset_name in GAMMA_THRESHOLDS and GAMMA_THRESHOLDS[preset_name]:
+                    if gamma > GAMMA_THRESHOLDS[preset_name]:
+                        warnings.append(f"高用量注意 (> {GAMMA_THRESHOLDS[preset_name]} γ)")
+                        
+        elif is_dex or is_prop or is_mid or "Norepinephrine" in preset_name:
+            # Need weight for these strictly usually, but show mg/h if no weight
+            pass
+            
+        if warnings:
+            card_class = "result-card-yellow"
+            
+        # Reference
         ref_text = ""
-        if preset_info["ref"]:
-            ref_text = f"推奨: {preset_info['ref']} (出典: {preset_info['source'] or '不明'})"
-
-        # Output Render
-        sub_html = " ".join(res_sub_list)
+        if preset_data["ref"]:
+            ref_text = f"推奨: {preset_data['ref']} (出典: {preset_data['source']})"
+            
+        # Display
         st.markdown(f"""
-        <div class="{card_color}">
-            <div class="result-main">{res_main}</div>
-            <div class="result-sub">{sub_html}</div>
+        <div class="{card_class}">
+            <div class="result-main">{main_text}</div>
+            <div class="result-sub">{sub_text}</div>
             <div class="result-ref">{ref_text}</div>
         </div>
         """, unsafe_allow_html=True)
         
-        for w in warnings:
-            st.warning(w)
+        for w in warnings: st.warning(w)
 
-        with st.expander("詳細・計算式"):
-            st.write(f"濃度: {conc_mg_ml:.3f} mg/mL")
-            st.write(f"式 (mg/h): {flow_mlh} × {conc_mg_ml:.3f}")
-            if weight_kg:
-                st.write(f"体重: {weight_kg} kg")
-                if is_dex:
-                    st.write("μg/kg/h = γ × 60")
-                if is_propofol:
-                    st.write("mg/kg/h = mg/h ÷ kg")
+        with st.expander("計算詳細"):
+            st.write(f"濃度: {mg/ml:.3f} mg/mL")
+            st.write(f"式: {flow} mL/h × {mg/ml:.3f} mg/mL = {dose_mg_h:.2f} mg/h")
 
 # ==========================================
-# 🧪 2. Renal Module
+# 🧪 Module 2: CCr
 # ==========================================
-def render_renal():
-    st.markdown("### 🧪 CCr (Cockcroft-Gault)")
+def render_ccr():
+    st.markdown("## 🧪 CCr (腎機能)")
     
-    st.text_input("年齢 (歳)", key="ccr_age", placeholder="例: 65")
-    st.text_input("体重 (kg)", key="ccr_weight", placeholder="例: 55")
-    st.text_input("Scr (mg/dL)", key="ccr_scr", placeholder="例: 0.9")
+    c1, c2 = st.columns(2)
+    c1.text_input("年齢 (歳)", key="ccr_age", placeholder="例: 65")
+    c2.text_input("体重 (kg)", key="ccr_weight", placeholder="例: 50")
+    st.text_input("Scr (mg/dL)", key="ccr_scr", placeholder="例: 1.0")
     sex = st.radio("性別", ["男性", "女性"], horizontal=True)
     
-    if st.button("計算実行", type="primary", use_container_width=True):
+    if st.button("計算", type="primary", use_container_width=True):
         age = safe_float(st.session_state.ccr_age)
-        weight = safe_float(st.session_state.ccr_weight)
+        wt = safe_float(st.session_state.ccr_weight)
         scr = safe_float(st.session_state.ccr_scr)
         
-        if None in [age, weight, scr]:
-            st.error("全ての数値を入力してください")
-            return
-        if scr <= 0:
-            st.error("Scrは0より大きい必要があります")
+        if None in [age, wt, scr] or scr <= 0:
+            st.error("正しい数値を入力してください")
             return
             
-        ccr = ((140 - age) * weight) / (72 * scr)
-        if sex == "女性":
-            ccr *= 0.85
-            
-        if ccr < 30:
-            color = "result-card-red"
+        ccr = ((140 - age) * wt) / (72 * scr)
+        if sex == "女性": ccr *= 0.85
+        
+        cat = "正常 (>60)"
+        color = "result-card-green"
+        if ccr < 30: 
             cat = "高度低下 (<30)"
+            color = "result-card-red"
         elif ccr < 60:
-            color = "result-card-yellow"
             cat = "中等度低下 (30-60)"
-        else:
-            color = "result-card-green"
-            cat = "正常〜軽度 (>60)"
+            color = "result-card-yellow"
             
         st.markdown(f"""
         <div class="{color}">
-            <div class="result-main">{ccr:.1f} <span style='font-size:1rem'>mL/min</span></div>
+            <div class="result-main">{ccr:.1f} mL/min</div>
             <div class="result-sub">{cat}</div>
         </div>
         """, unsafe_allow_html=True)
 
 # ==========================================
-# ⚖️ 3. Acid-Base Module
+# ⚖️ Module 3: Acid-Base
 # ==========================================
-def render_acidbase():
-    st.markdown("### ⚖️ 酸塩基平衡")
+def render_ab():
+    st.markdown("## ⚖️ 酸塩基平衡")
     
     st.text_input("pH", key="ab_ph", placeholder="例: 7.32")
-    st.text_input("PaCO2 (mmHg)", key="ab_pco2", placeholder="例: 35")
-    st.text_input("HCO3- (mEq/L)", key="ab_hco3", placeholder="例: 18")
-    st.text_input("Na (mEq/L)", key="ab_na", placeholder="例: 135")
-    st.text_input("Cl (mEq/L)", key="ab_cl", placeholder="例: 98")
-    st.text_input("Alb (g/dL) [任意]", key="ab_alb", placeholder="例: 3.5")
+    c1, c2 = st.columns(2)
+    c1.text_input("PaCO2", key="ab_pco2", placeholder="mmHg")
+    c2.text_input("HCO3", key="ab_hco3", placeholder="mEq/L")
+    c3, c4 = st.columns(2)
+    c3.text_input("Na", key="ab_na", placeholder="mEq/L")
+    c4.text_input("Cl", key="ab_cl", placeholder="mEq/L")
+    st.text_input("Alb (任意)", key="ab_alb", placeholder="g/dL")
     
-    if st.button("判定実行", type="primary", use_container_width=True):
+    if st.button("判定", type="primary", use_container_width=True):
         ph = safe_float(st.session_state.ab_ph)
-        pco2 = safe_float(st.session_state.ab_pco2)
-        hco3 = safe_float(st.session_state.ab_hco3)
         na = safe_float(st.session_state.ab_na)
         cl = safe_float(st.session_state.ab_cl)
+        hco3 = safe_float(st.session_state.ab_hco3)
         alb = safe_float(st.session_state.ab_alb)
         
-        if None in [ph, pco2, hco3, na, cl]:
-            st.error("Alb以外の必須項目を入力してください")
+        if None in [ph, na, cl, hco3]:
+            st.error("Alb以外の必須値を入力してください")
             return
+            
+        # Analysis
+        main_state = "正常範囲"
+        if ph < 7.35: main_state = "アシデミア"
+        elif ph > 7.45: main_state = "アルカレミア"
         
-        # Primary Disorder
-        conclusions = []
-        if ph < 7.35: main = "アシデミア (酸血症)"
-        elif ph > 7.45: main = "アルカレミア (アルカリ血症)"
-        else: main = "pH正常範囲"
-        
-        # AG Calc
         ag = na - (cl + hco3)
-        ag_display = f"{ag:.1f}"
+        ag_show = ag
+        ag_txt = f"AG: {ag:.1f}"
         
-        # Corrected AG
-        bg_color = "result-card-green"
-        ag_extra_msg = ""
-        
-        eval_ag = ag
-        if alb is not None:
-            ag_corr = ag + 2.5 * (4.0 - alb)
-            eval_ag = ag_corr
-            ag_display += f" (補正 {ag_corr:.1f})"
-
-        # AG Evaluation
-        delta_ratio = None
-        if eval_ag > 12:
-            ag_extra_msg = " [AG開大]"
-            bg_color = "result-card-yellow"
+        if alb:
+            ag_corr = ag + 2.5*(4.0 - alb)
+            ag_show = ag_corr
+            ag_txt += f" (補正 {ag_corr:.1f})"
+            
+        sub_msgs = []
+        is_high_ag = False
+        if ag_show > 12:
+            is_high_ag = True
+            sub_msgs.append("AG開大性 代謝性アシドーシス")
             
             # Delta Ratio
-            delta_ag = eval_ag - 12
-            delta_hco3 = 24 - hco3
-            if delta_hco3 != 0:
-                delta_ratio = delta_ag / delta_hco3
-                if delta_ratio < 0.4:
-                    conclusions.append("混合: 高Cl性アシドーシスの合併")
-                elif delta_ratio > 2.0:
-                    conclusions.append("混合: 代謝性アルカローシスの合併")
+            d_ag = ag_show - 12
+            d_hco3 = 24 - hco3
+            if d_hco3 != 0:
+                ratio = d_ag / d_hco3
+                if ratio < 0.4: sub_msgs.append("併存: 高Cl性アシドーシス")
+                elif ratio > 2.0: sub_msgs.append("併存: 代謝性アルカローシス")
         
-        # Output
+        color = "result-card-yellow" if ph < 7.35 or is_high_ag else "result-card-green"
+        
         st.markdown(f"""
-        <div class="{bg_color}">
-            <div class="result-main">{main}</div>
-            <div class="result-sub">AG: {ag_display}{ag_extra_msg}</div>
+        <div class="{color}">
+            <div class="result-main">{main_state}</div>
+            <div class="result-sub">{ag_txt} {'[開大]' if is_high_ag else ''}</div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Secondary findings
-        for c in conclusions:
-            st.info(c)
-            
-        # Detailed Expander (Winter's etc)
-        with st.expander("詳細解析 (代償・予測)"):
-            st.write(f"**Anion Gap**: {ag:.1f}")
-            if alb: st.write(f"**補正AG**: {ag:.1f} + 2.5×(4-{alb}) = {ag_corr:.1f}")
-            
-            # Winter's Formula (Metabolic Acidosis)
-            if hco3 < 24 and ph < 7.40 and pco2:
-                expected_pco2 = 1.5 * hco3 + 8
-                st.write(f"**Winter's Formula**: 予測PaCO2 = {expected_pco2:.1f} ± 2")
-                if pco2 > (expected_pco2 + 2):
-                    st.write("👉 呼吸性アシドーシスの合併 (代償不全)")
-                elif pco2 < (expected_pco2 - 2):
-                    st.write("👉 呼吸性アルカローシスの合併 (過代償)")
-                else:
-                    st.write("👉 呼吸性代償の範囲内")
-            
-            # Delta Ratio
-            if delta_ratio is not None:
-                st.write(f"**Delta Ratio (ΔAG/ΔHCO3)**: {delta_ratio:.2f}")
+        for m in sub_msgs: st.info(m)
 
 # ==========================================
-# 🫀 4. Cardio Module
+# 🚨 Module 4: Shock (New)
 # ==========================================
-def render_cardio():
-    st.markdown("### 🫀 心不全・ショック")
+def render_shock():
+    st.markdown("## 🚨 ショック分類")
     
-    sbp = st.radio("収縮期血圧 (SBP)", ["維持 (>90)", "低下 (<90)"])
-    skin = st.radio("皮膚所見 (灌流)", ["Warm (温かい)", "Cold (冷たい)"])
-    lung = st.radio("肺うっ血 (聴診)", ["Dry (なし)", "Wet (あり)"])
-    lac = st.radio("乳酸値", ["正常 (<2)", "上昇 (>2)"])
-
-    if st.button("分類実行", type="primary", use_container_width=True):
-        subset = ""
-        action = []
-        color = "result-card-green"
+    sbp = st.selectbox("収縮期血圧 (SBP)", ["< 90 mmHg (ショック)", "> 90 mmHg (維持)"])
+    skin = st.radio("皮膚所見 (灌流)", ["Warm (温/Dry)", "Cold (冷/湿)"])
+    lung = st.radio("肺うっ血 (聴診)", ["なし (Dry)", "あり (Wet)"])
+    urine = st.selectbox("尿量", ["維持 (>0.5 mL/kg/h)", "低下/無尿"])
+    lactate = st.selectbox("乳酸値", ["正常 (<2 mmol/L)", "上昇 (>2 mmol/L)"])
+    
+    if st.button("評価", type="primary", use_container_width=True):
+        if "維持" in sbp:
+            st.success("現在はショック血圧ではありません。バイタル変動に注意してください。")
+            return
+            
+        # Logic Rule Base
+        shock_type = "分類不能"
+        action = "原因検索・ABC安定化"
+        prob = "中"
         
         if skin.startswith("Warm"):
-            if lung.startswith("Dry"):
-                subset = "Subset I (安定)"
-                action = ["経過観察", "輸液過剰注意"]
-            else:
-                subset = "Subset II (うっ血)"
-                action = ["血管拡張薬", "利尿薬"]
-                color = "result-card-yellow"
+            shock_type = "血液分布異常性ショック (敗血症等)"
+            action = "ノルアドレナリン + 輸液 + 抗生剤"
+            prob = "高"
         else: # Cold
-            color = "result-card-red"
-            if lung.startswith("Dry"):
-                subset = "Subset III (低灌流)"
-                action = ["輸液負荷試験", "強心薬"]
-            else:
-                subset = "Subset IV (最重症)"
-                action = ["強心薬", "昇圧薬", "補助循環"]
+            if lung.startswith("あり"):
+                shock_type = "心原性ショック"
+                action = "強心薬・昇圧薬 (Do Not Fluid)"
+                prob = "高"
+            else: # Dry
+                shock_type = "循環血液量減少性ショック"
+                action = "急速輸液負荷"
+                prob = "高"
+                
+        st.markdown(f"""
+        <div class="result-card-red">
+            <div class="result-main">{shock_type}</div>
+            <div class="result-sub">推奨: {action}</div>
+            <div class="result-ref">乳酸値: {lactate} / 尿量: {urine}</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Shock
-        shock_msg = ""
-        if sbp.startswith("低下"):
-            shock_msg = "🚨 SHOCK"
+        with st.expander("参照ガイドライン"):
+            st.write("出典: [日本版敗血症診療ガイドライン2020](https://www.jsicm.org/news/upload/j-sscg2020_plus.pdf)")
+            st.write("Warm Shock → Distributive (Septic)")
+            st.write("Cold & Wet → Cardiogenic")
+            st.write("Cold & Dry → Hypovolemic / Obstructive")
+
+# ==========================================
+# 🫀 Module 5: Heart Failure (Forrester)
+# ==========================================
+def render_hf():
+    st.markdown("## 🫀 心不全 (Forrester)")
+    
+    st.markdown("#### ヘモダイナミクス入力")
+    c1, c2 = st.columns(2)
+    c1.text_input("CI (L/min/m2)", key="hf_ci", placeholder="例: 2.0")
+    c2.text_input("PCWP (mmHg)", key="hf_pcwp", placeholder="例: 20")
+    st.text_input("収縮期血圧 (opt)", key="hf_sbp", placeholder="例: 100")
+    
+    status = st.radio("クリニカルシナリオ (CS)", ["CS1 (血圧高値)", "CS2 (全身浮腫)", "CS3 (低灌流)", "CS4 (ACS)", "CS5 (右心不全)"])
+    
+    if st.button("分類実行", type="primary", use_container_width=True):
+        ci = safe_float(st.session_state.hf_ci)
+        pcwp = safe_float(st.session_state.hf_pcwp)
+        
+        if None in [ci, pcwp]:
+            st.error("CIとPCWPを入力してください (推定値可)")
+            return
+            
+        # Logic
+        # Forrester Thresholds: CI=2.2, PCWP=18
+        is_wet = pcwp >= FORRESTER_PCWP_THRESH
+        is_cold = ci < FORRESTER_CI_THRESH
+        
+        subset = "I"
+        desc = "正常 (Warm & Dry)"
+        rx = "経過観察 / 基礎疾患治療"
+        color = "result-card-green"
+        
+        if not is_cold and is_wet:
+            subset = "II"
+            desc = "肺うっ血 (Warm & Wet)"
+            rx = "利尿薬 (Furosemide) + 血管拡張 (Nitrates)"
+            color = "result-card-yellow"
+        elif is_cold and not is_wet:
+            subset = "III"
+            desc = "低灌流 (Cold & Dry)"
+            rx = "輸液負荷 (Check Volume) + 強心薬"
+            color = "result-card-yellow"
+        elif is_cold and is_wet:
+            subset = "IV"
+            desc = "うっ血 + 低灌流 (Cold & Wet)"
+            rx = "強心薬 + 昇圧薬 + 補助循環検討"
             color = "result-card-red"
-            if skin.startswith("Warm"):
-                shock_msg += " (Distributive?)"
-                action.insert(0, "Noradrenaline")
-            else:
-                if lung.startswith("Wet"):
-                    shock_msg += " (Cardiogenic?)"
-                    action.insert(0, "昇圧・強心")
-                else:
-                    shock_msg += " (Hypovolemic?)"
-                    action.insert(0, "急速輸液")
-                    
-        final_title = f"{subset}"
-        if shock_msg:
-            final_title += f" + {shock_msg}"
             
         st.markdown(f"""
         <div class="{color}">
-            <div class="result-main" style="font-size:1.3rem">{final_title}</div>
-            <div class="result-sub">推奨: {' / '.join(action)}</div>
+            <div class="result-main">Subset {subset}</div>
+            <div class="result-sub">{desc}</div>
+            <div class="result-sub" style="font-size:1rem">推奨: {rx}</div>
         </div>
         """, unsafe_allow_html=True)
         
-        if lac.startswith("上昇"):
-            st.error("組織低灌流の疑い。再評価が必要です。")
+        with st.expander("詳細閾値・根拠"):
+            st.write(f"**PCWP**: {pcwp} (閾値 {FORRESTER_PCWP_THRESH}) -> {'Wet' if is_wet else 'Dry'}")
+            st.write(f"**CI**: {ci} (閾値 {FORRESTER_CI_THRESH}) -> {'Cold' if is_cold else 'Warm'}")
+            st.caption("出典: 日本循環器学会 心不全診療ガイドライン")
 
 # ==========================================
-# 🚀 Global Router
+# 🚀 Main Router
 # ==========================================
 def main():
-    # Vertical Menu for Mobile
-    mode = st.radio(
-        "機能選択", 
-        ["γ計算 (持続投与)", "CCr (腎機能)", "酸塩基平衡", "心不全分類"],
-        label_visibility="collapsed"
-    )
+    menu = ["γ計算", "CCr (腎機能)", "酸塩基平衡", "ショック分類", "心不全 (Forrester)"]
+    choice = st.radio("機能選択", menu, label_visibility="collapsed")
     
     st.markdown("---")
     
-    if mode == "γ計算 (持続投与)":
-        render_gamma()
-    elif mode == "CCr (腎機能)":
-        render_renal()
-    elif mode == "酸塩基平衡":
-        render_acidbase()
-    elif mode == "心不全分類":
-        render_cardio()
+    if choice == "γ計算": render_gamma()
+    elif choice == "CCr (腎機能)": render_ccr()
+    elif choice == "酸塩基平衡": render_ab()
+    elif choice == "ショック分類": render_shock()
+    elif choice == "心不全 (Forrester)": render_hf()
 
 if __name__ == "__main__":
     main()
