@@ -13,10 +13,8 @@ st.set_page_config(
 )
 
 # ------------------------------------------
-# 🩺 Clinical Constants & Thresholds (Editable)
+# 🩺 Clinical Constants & Thresholds
 # ------------------------------------------
-
-# === Clinical constants & mappings (編集可能) ===
 GAMMA_THRESHOLDS = {
     "Norepinephrine (NAD)": {"type":"ug/kg/min", "threshold": 0.3},
     "Dobutamine (DOB)": {"type":"ug/kg/min", "threshold": 10.0},
@@ -31,10 +29,6 @@ GAMMA_THRESHOLDS = {
 
 FORRESTER_CI = 2.2
 FORRESTER_PCWP = 18.0
-
-FENA_PRERENAL = 1.0
-FENA_ATN = 2.0
-FEUREA_PRERENAL = 35.0
 
 MOL_WEIGHTS = {
     "Na": 23.0, "K": 39.1, "Cl": 35.5, 
@@ -59,91 +53,59 @@ DRUG_PRESETS = {
 }
 
 # ==========================================
-# 🩹 Session Initialization & Utils
+# 🩹 Session Initialization
 # ==========================================
 if "initialized" not in st.session_state:
     st.session_state.update({
         # Gamma
         "gamma_preset": "カスタム",
-        "gamma_mg": None,
-        "gamma_ml": None,
-        "gamma_flow": None,
-        "gamma_wt": None,
+        "gamma_mg": None, "gamma_ml": None, "gamma_flow": None, "gamma_wt": None,
         # CCr
-        "ccr_age": None,
-        "ccr_wt": None,
-        "ccr_scr": None,
-        "ccr_sex": "男性",
+        "ccr_age": None, "ccr_wt": None, "ccr_scr": None, "ccr_sex": "男性",
         # Acid/base
-        "ab_ph": None,
-        "ab_pco2": None,
-        "ab_hco3": None,
-        "ab_na": None,
-        "ab_cl": None,
-        "ab_alb": None,
+        "ab_ph": None, "ab_pco2": None, "ab_hco3": None, "ab_na": None, "ab_cl": None, "ab_alb": None,
         # Shock
-        "shock_sbp": None,
-        "shock_dbp": None,
-        "shock_hr": None,
-        "shock_lac": None,
+        "shock_sbp": None, "shock_dbp": None, "shock_hr": None, "shock_lac": None,
         # HF
-        "hf_co": None,
-        "hf_bsa": None,
-        "hf_pcwp": None,
+        "hf_co": None, "hf_bsa": None, "hf_pcwp": None,
         # Renal
-        "renal_una": None,
-        "renal_pna": None,
-        "renal_ucr": None,
-        "renal_pcr": None,
-        "renal_uurea": None,
-        "renal_purea": None,
+        "renal_una": None, "renal_pna": None, "renal_ucr": None, "renal_pcr": None,
+        "renal_bun": None, "renal_uosm": None, # Expanded inputs
     })
     st.session_state["initialized"] = True
 
 def preset_apply_to_session(preset_key):
-    """Apply preset values to session state, allowing None for custom."""
     data = DRUG_PRESETS.get(preset_key, {"mg": None, "ml": None})
     st.session_state["gamma_mg"] = data.get("mg")
     st.session_state["gamma_ml"] = data.get("ml")
 
 # ==========================================
-# 🎨 Styles & Scripts
+# 🎨 Styles
 # ==========================================
 st.markdown("""
 <style>
-    /* 1. Mobile Top Spacing */
     .block-container {
         padding-top: 2.8rem !important;
         padding-bottom: 5rem !important;
         max-width: 600px;
     }
-    /* 2. Form & Inputs */
     .stNumberInput input { font-size: 16px !important; }
     .stSelectbox div { font-size: 16px !important; }
-    
-    /* 3. Result Cards */
-    .result-card-green {
-        background-color: #dcfce7; padding: 12px; border-radius: 8px; 
-        border-left: 5px solid #22c55e; margin: 10px 0;
-    }
-    .result-card-yellow {
-        background-color: #fef9c3; padding: 12px; border-radius: 8px; 
-        border-left: 5px solid #eab308; margin: 10px 0;
-    }
-    .result-card-red {
-        background-color: #fee2e2; padding: 12px; border-radius: 8px; 
-        border-left: 5px solid #ef4444; margin: 10px 0;
-    }
-    .res-main { font-size: 1.4rem; font-weight: bold; color: #1f2937; }
-    .res-sub { font-size: 1.0rem; color: #4b5563; margin-top: 4px; }
-    
-    /* Hide Footer */
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Result Box Styles */
+    .res-box {
+        padding: 15px; border-radius: 8px; margin-bottom: 10px;
+        border: 1px solid #e5e7eb;
+    }
+    .res-title { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; }
+    .res-val { font-size: 1.5rem; font-weight: bold; color: #111827; }
+    .res-sub { color: #6b7280; font-size: 0.9rem; margin-top: 2px; }
 </style>
 """, unsafe_allow_html=True)
 
-# iOS Numeric Keyboard Helper
+# iOS Keyboard Helper
 st.markdown("""
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -154,7 +116,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 """, unsafe_allow_html=True)
-
 
 # ==========================================
 # 🧠 Logic Functions
@@ -179,10 +140,6 @@ def calc_fena(p_na, u_na, p_cr, u_cr):
     if not p_na or not u_cr or (p_na * u_cr) == 0: return None
     return (u_na * p_cr) / (p_na * u_cr) * 100
 
-def calc_feurea(p_urea, u_urea, p_cr, u_cr):
-    if not p_urea or not u_cr or (p_urea * u_cr) == 0: return None
-    return (u_urea * p_cr) / (p_urea * u_cr) * 100
-
 # ==========================================
 # 📱 Modules
 # ==========================================
@@ -202,14 +159,19 @@ def render_gamma_module():
 
     with st.form("gamma_form"):
         drug_mg = st.number_input("薬剤総量 (mg)", min_value=0.0, step=0.1, format="%.1f", key="gamma_mg", value=None)
+        st.caption("例: 5.0")
+        
         sol_ml = st.number_input("溶解総量 (mL)", min_value=0.0, step=0.1, format="%.1f", key="gamma_ml", value=None)
+        st.caption("例: 50.0")
+        
         flow = st.number_input("投与速度 (mL/h)", min_value=0.0, step=0.1, format="%.1f", key="gamma_flow", value=None)
+        st.caption("例: 3.0")
         
         use_wt = st.checkbox("体重で換算する", value=True)
+        wt = None
         if use_wt:
             wt = st.number_input("体重 (kg)", min_value=0.0, step=0.1, format="%.1f", key="gamma_wt", value=None)
-        else:
-            wt = None
+            st.caption("例: 50.0")
 
         submitted = st.form_submit_button("計算")
 
@@ -229,45 +191,37 @@ def render_gamma_module():
         
         # Display Logic
         cfg = GAMMA_THRESHOLDS.get(preset)
-        card = "result-card-green"
         warning = None
-        display_secondary = ""
 
-        if gamma is not None:
+        if gamma is not None and cfg:
             # Threshold Check
-            if cfg:
-                if cfg["type"] == "ug/kg/h":
-                    if gamma * 60 > cfg["threshold"]:
-                        warning = f"注意: {preset} の閾値 {cfg['threshold']} μg/kg/h を超えています"
-                        card = "result-card-yellow"
-                    display_secondary = f"{gamma*60:.2f} μg/kg/h (= {gamma:.3f} μg/kg/min)"
-                elif cfg["type"] == "ug/kg/min":
-                    if gamma > cfg["threshold"]:
-                        warning = f"注意: {preset} の閾値 {cfg['threshold']} μg/kg/min を超えています"
-                        card = "result-card-yellow"
-                    display_secondary = f"{gamma:.3f} μg/kg/min"
-                elif cfg["type"] == "mg/kg/h":
-                    mgkg_h = (mg_h / wt) if wt else 0
-                    if mgkg_h > cfg["threshold"]:
-                        warning = f"注意: {preset} の閾値 {cfg['threshold']} mg/kg/h を超えています"
-                        card = "result-card-yellow"
-                    display_secondary = f"{mgkg_h:.3f} mg/kg/h"
-        else:
-            display_secondary = "(体重未入力のため γ計算なし)"
+            if cfg["type"] == "ug/kg/h":
+                if gamma * 60 > cfg["threshold"]: warning = f"注意: 閾値 {cfg['threshold']} μg/kg/h 超過"
+            elif cfg["type"] == "ug/kg/min":
+                if gamma > cfg["threshold"]: warning = f"注意: 閾値 {cfg['threshold']} μg/kg/min 超過"
+            elif cfg["type"] == "mg/kg/h":
+                mgkg_h = (mg_h / wt) if wt else 0
+                if mgkg_h > cfg["threshold"]: warning = f"注意: 閾値 {cfg['threshold']} mg/kg/h 超過"
 
+        # === Result Display ===
+        st.markdown(f"### 結果")
+        col_bg = "#fef2f2" if warning else "#ecfdf5"
+        border = "#ef4444" if warning else "#10b981"
+        
         st.markdown(f"""
-        <div class="{card}">
-            <div class='res-main'>{mg_h:.2f} mg/h</div>
-            <div class='res-sub'>{display_secondary}</div>
+        <div style="background-color:{col_bg}; padding:15px; border-radius:8px; border-left:5px solid {border}; margin-bottom:10px;">
+            <div style="font-size:1.2rem; font-weight:bold; margin-bottom:4px;">流量: {mg_h:.2f} mg/h</div>
+            {f'<div style="font-size:1.4rem; color:#111827; font-weight:bold;">γ: {gamma:.3f} μg/kg/min</div>' if gamma is not None else '<div style="color:#6b7280;">(体重未入力のためγ未計算)</div>'}
+            {f'<div style="font-size:1.1rem; color:#4b5563;">= {gamma*60:.2f} μg/kg/h</div>' if gamma is not None else ''}
         </div>
         """, unsafe_allow_html=True)
         
         if warning: st.warning(warning)
         
-        with st.expander("計算根拠"):
+        with st.expander("計算詳細"):
             st.write(f"濃度: {conc:.4f} mg/mL")
             if gamma is not None:
-                st.write(f"γ = ({mg_h:.4f} × 1000) / ({wt} × 60) = {gamma:.4f}")
+                st.write(f"γ = ({mg_h:.4f} × 1000) / ({wt} × 60)")
 
 
 def render_ccr_module():
@@ -275,8 +229,11 @@ def render_ccr_module():
     
     with st.form("ccr_form"):
         age = st.number_input("年齢 (歳)", min_value=0, step=1, format="%d", key="ccr_age", value=None)
+        st.caption("例: 65")
         wt = st.number_input("体重 (kg)", min_value=0.0, step=0.1, format="%.1f", key="ccr_wt", value=None)
+        st.caption("例: 50.0")
         scr = st.number_input("Scr (mg/dL)", min_value=0.0, step=0.01, format="%.2f", key="ccr_scr", value=None)
+        st.caption("例: 1.05")
         sex = st.radio("性別", ["男性", "女性"], key="ccr_sex", horizontal=True)
         
         submitted = st.form_submit_button("計算")
@@ -287,21 +244,10 @@ def render_ccr_module():
         else:
             val = calc_ccr(age, wt, scr, sex)
             if val:
-                cat = "正常"
-                col = "result-card-green"
-                if val < 30: 
-                    cat = "高度低下 (<30)"
-                    col = "result-card-red"
-                elif val < 60:
-                    cat = "中等度低下 (30-60)"
-                    col = "result-card-yellow"
-                    
-                st.markdown(f"""
-                <div class="{col}">
-                    <div class="res-main">{val:.1f} mL/min</div>
-                    <div class="res-sub">{cat}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.metric("CCr (mL/min)", f"{val:.1f}")
+                if val < 30: st.error("高度低下 (<30)")
+                elif val < 60: st.warning("中等度低下 (30-60)")
+                else: st.success("正常 (>60)")
 
 
 def render_ab_module():
@@ -309,13 +255,19 @@ def render_ab_module():
     
     with st.form("ab_form"):
         ph = st.number_input("pH", step=0.01, format="%.2f", key="ab_ph", value=None)
+        st.caption("例: 7.40")
         c1, c2 = st.columns(2)
         pco2 = c1.number_input("PaCO2 (mmHg)", step=0.1, format="%.1f", key="ab_pco2", value=None)
+        st.caption("例: 40.0")
         hco3 = c2.number_input("HCO3- (mmol/L)", step=0.1, format="%.1f", key="ab_hco3", value=None)
+        st.caption("例: 24.0")
         c3, c4 = st.columns(2)
         na = c3.number_input("Na (mmol/L)", step=0.1, format="%.1f", key="ab_na", value=None)
+        st.caption("例: 140.0")
         cl = c4.number_input("Cl (mmol/L)", step=0.1, format="%.1f", key="ab_cl", value=None)
-        alb = st.number_input("Alb (g/dL, 任意)", step=0.1, format="%.1f", key="ab_alb", value=None)
+        st.caption("例: 100.0")
+        alb = st.number_input("Alb (g/dL)", step=0.1, format="%.1f", key="ab_alb", value=None)
+        st.caption("例: 4.0 (未入力時は4.0扱い)")
         
         submitted = st.form_submit_button("判定")
         
@@ -325,95 +277,65 @@ def render_ab_module():
             return
             
         real_alb = alb if alb is not None else 4.0
-        
-        # AG
         ag = na - (cl + hco3)
         ag_corr = ag + 2.5 * (4.0 - real_alb)
         
-        state = "pH正常範囲"
-        if ph < 7.35: state = "アシデミア"
-        elif ph > 7.45: state = "アルカレミア"
+        st.info(f"Anion Gap (補正): {ag_corr:.1f}")
         
-        is_high_ag = ag_corr > 12
-        detail = []
+        msgs = []
+        if ph < 7.35: msgs.append("アシデミア")
+        elif ph > 7.45: msgs.append("アルカレミア")
         
-        if is_high_ag:
-            state += " (AG開大)"
-            d_ag = ag_corr - 12
-            d_hco3 = 24 - hco3
-            if d_hco3 != 0:
-                ratio = d_ag / d_hco3
-                if ratio < 0.4: detail.append("高Cl性アシドーシス合併? (Ratio<0.4)")
-                elif ratio > 2.0: detail.append("代謝性アルカローシス合併? (Ratio>2.0)")
-                
+        if ag_corr > 12:
+            msgs.append("AG開大性代謝性アシドーシス")
+        
         # Winter
         if hco3 < 24 and ph < 7.40:
-            exp_pco2 = 1.5 * hco3 + 8
-            detail.append(f"予測PaCO2: {exp_pco2:.1f}±2")
-            if pco2 > exp_pco2 + 2: detail.append("呼吸性代償不全 (Resp Acidosis)")
-            elif pco2 < exp_pco2 - 2: detail.append("過代償 (Resp Alkalosis)")
-            
-        col = "result-card-yellow" if "アシデミア" in state or is_high_ag else "result-card-green"
-        st.markdown(f"""
-        <div class="{col}">
-            <div class="res-main">{state}</div>
-            <div class="res-sub">AG(補正): {ag_corr:.1f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        for d in detail: st.info(d)
+            exp = 1.5 * hco3 + 8
+            if pco2 > exp + 2: msgs.append("呼吸性アシドーシス合併")
+            elif pco2 < exp - 2: msgs.append("呼吸性アルカローシス合併")
+        
+        for m in msgs:
+            st.write(f"・{m}")
 
 
 def render_shock_module():
     st.header("🚨 ショック評価")
     with st.form("shock_form"):
         sbp = st.number_input("SBP (mmHg)", min_value=0, step=1, key="shock_sbp", value=None)
+        st.caption("例: 80")
         dbp = st.number_input("DBP (mmHg)", min_value=0, step=1, key="shock_dbp", value=None)
-        hr = st.number_input("HR (bpm)", min_value=0, step=1, key="shock_hr", value=None)
+        st.caption("例: 50")
         lactate = st.number_input("乳酸 (mmol/L)", min_value=0.0, step=0.1, format="%.1f", key="shock_lac", value=None)
+        st.caption("例: 3.5")
         
         skin = st.selectbox("皮膚所見", ["Cold", "Warm"])
-        infection = st.checkbox("感染兆候あり")
-        bleeding = st.checkbox("出血/外傷あり")
-        jvd = st.checkbox("頸静脈怒張")
         submitted = st.form_submit_button("評価")
         
     if submitted:
         if sbp is None or dbp is None or lactate is None:
-            st.error("血圧と乳酸値を入力してください")
+            st.error("数値を入力してください")
             return
-            
         map_val = (sbp + 2*dbp) / 3.0
-        shock_flag = map_val < 65 or sbp < 90
-        lactate_flag = lactate >= 2.0
+        st.metric("平均血圧 (MAP)", f"{map_val:.1f} mmHg")
         
-        possibilities = []
-        actions = []
-        if shock_flag and lactate_flag and (infection or skin=="Warm"):
-            possibilities.append("敗血症性 (Distributive)")
-            actions.append("輸液 → NAD")
-        if bleeding:
-            possibilities.append("出血性 (Hypovolemic)")
-            actions.append("輸血/止血")
-        if jvd and skin=="Cold":
-            possibilities.append("閉塞性/心原性")
-            actions.append("心エコー確認")
-            
-        severity = "高" if (shock_flag and lactate_flag) else "中"
-        if not shock_flag and not lactate_flag: severity = "低/なし"
-
-        st.markdown(f"""<div class='result-card-red'>
-            <div class='res-main'>ショック可能性: {severity}</div>
-            <div class='res-sub'>疑い: {', '.join(possibilities) if possibilities else '---'}</div>
-            </div>""", unsafe_allow_html=True)
-        st.info(f"MAP: {map_val:.1f}, Lactate: {lactate}")
+        if map_val < 65 or sbp < 90 or lactate >= 2.0:
+            st.error("ショックの疑いあり (MAP<65 or Lac>=2)")
+            if skin == "Warm": st.write("Warm Shock: 敗血症性などを考慮 → 輸液負荷・NAD")
+            else: st.write("Cold Shock: 心原性・循環血液量減少などを考慮")
+        else:
+            st.success("血行動態は比較的安定しています")
 
 
 def render_hf_module():
     st.header("🫀 心不全 (Forrester)")
     with st.form("hf_form"):
         co = st.number_input("CO (L/min)", min_value=0.0, step=0.1, format="%.1f", key="hf_co", value=None)
+        st.caption("例: 4.5")
         bsa = st.number_input("BSA (m2)", min_value=0.0, step=0.1, format="%.1f", key="hf_bsa", value=None)
+        st.caption("例: 1.6")
         pcwp = st.number_input("PCWP (mmHg)", min_value=0, step=1, key="hf_pcwp", value=None)
+        st.caption("例: 20")
         
         submitted = st.form_submit_button("分類")
         
@@ -426,53 +348,143 @@ def render_hf_module():
         is_wet = pcwp >= FORRESTER_PCWP
         is_cold = ci < FORRESTER_CI
         
-        subset = "I"
-        if is_wet and not is_cold: subset = "II"
-        elif not is_wet and is_cold: subset = "III"
-        elif is_wet and is_cold: subset = "IV"
+        # Determine subset and explanation
+        subset = ""
+        desc = ""
+        action = ""
+        color = ""
         
+        if not is_wet and not is_cold:
+            subset = "I (Warm & Dry)"
+            desc = "正常: 循環維持、うっ血なし"
+            action = "経過観察"
+            color = "#dcfce7"
+        elif is_wet and not is_cold:
+            subset = "II (Warm & Wet)"
+            desc = "うっ血あり + 末梢循環保たれている"
+            action = "血管拡張薬 + 利尿薬 を検討"
+            color = "#fef9c3"
+        elif not is_wet and is_cold:
+            subset = "III (Cold & Dry)"
+            desc = "低灌流 + 容量不足の可能性"
+            action = "輸液負荷テスト + 強心薬 を検討"
+            color = "#fef9c3"
+        elif is_wet and is_cold:
+            subset = "IV (Cold & Wet)"
+            desc = "うっ血 + 低灌流 (最重症)"
+            action = "強心薬 + 昇圧薬 + 補助循環 を検討"
+            color = "#fee2e2"
+            
         st.markdown(f"""
-        <div class="result-card-yellow">
-            <div class="res-main">Subset {subset}</div>
-            <div class="res-sub">CI: {ci:.2f}, PCWP: {pcwp}</div>
+        <div style="background-color:{color}; padding:15px; border-radius:8px; margin-bottom:10px;">
+            <h3>Subset {subset}</h3>
+            <p><strong>{desc}</strong></p>
+            <p>推奨: {action}</p>
         </div>
         """, unsafe_allow_html=True)
+        st.write(f"CI: {ci:.2f} (閾値 2.2) / PCWP: {pcwp} (閾値 18)")
 
 
 def render_renal_diff():
     st.header("💧 腎障害鑑別")
     with st.form("renal_form"):
         c1, c2 = st.columns(2)
-        u_na = c1.number_input("尿中Na", step=0.1, key="renal_una", value=None)
-        p_na = c2.number_input("血清Na", step=0.1, key="renal_pna", value=None)
+        u_na = c1.number_input("尿中Na (mmol/L)", step=0.1, key="renal_una", value=None)
+        p_na = c2.number_input("血清Na (mmol/L)", step=0.1, key="renal_pna", value=None)
         c3, c4 = st.columns(2)
-        u_cr = c3.number_input("尿中Cr", step=0.1, key="renal_ucr", value=None)
-        p_cr = c4.number_input("血清Cr", step=0.1, key="renal_pcr", value=None)
+        u_cr = c3.number_input("尿中Cr (mg/dL)", step=0.1, key="renal_ucr", value=None)
+        p_cr = c4.number_input("血清Cr (mg/dL)", step=0.1, key="renal_pcr", value=None)
         
-        do_urea = st.checkbox("FeUrea")
-        u_urea = None; p_urea = None
-        if do_urea:
-            c5, c6 = st.columns(2)
-            u_urea = c5.number_input("尿Urea", step=0.1, key="renal_uurea", value=None)
-            p_urea = c6.number_input("血清Urea", step=0.1, key="renal_purea", value=None)
-            
+        c5, c6 = st.columns(2)
+        bun = c5.number_input("BUN (mg/dL)", step=0.1, key="renal_bun", value=None)
+        uosm = c6.number_input("尿浸透圧 (mOsm/kg)", step=1.0, key="renal_uosm", value=None)
+        st.caption("※BUN/尿浸透圧は任意")
+        
         submitted = st.form_submit_button("計算")
         
     if submitted:
-        fena = calc_fena(p_na, u_na, p_cr, u_cr)
-        if fena is not None:
-            st.success(f"FeNa: {fena:.2f}%")
+        # FENa
+        fena = None
+        if u_na and p_na and u_cr and p_cr:
+            fena = calc_fena(p_na, u_na, p_cr, u_cr)
+            
+        # BUN/Cr Ratio
+        buncr = None
+        if bun and p_cr and p_cr > 0:
+            buncr = bun / p_cr
+            
+        st.subheader("分析結果")
         
-        if do_urea:
-            feurea = calc_feurea(p_urea, u_urea, p_cr, u_cr)
-            if feurea is not None:
-                st.info(f"FeUrea: {feurea:.2f}%")
+        # Findings
+        findings = []
+        is_prerenal = False
+        is_atn = False
+        
+        if fena is not None:
+            st.metric("FENa", f"{fena:.2f} %")
+            if fena < 1.0:
+                findings.append("FENa < 1% : 腎前性疑い")
+                is_prerenal = True
+            elif fena > 2.0:
+                findings.append("FENa > 2% : 腎性 (ATN) 疑い")
+                is_atn = True
+            else:
+                findings.append("FENa 1-2%: 中間域")
+                
+        if buncr is not None:
+            st.write(f"BUN/Cr比: {buncr:.1f}")
+            if buncr > 20: 
+                findings.append("BUN/Cr > 20 : 腎前性疑い")
+                is_prerenal = True
+                
+        if uosm is not None:
+            st.write(f"尿浸透圧: {uosm}")
+            if uosm > 500:
+                findings.append("Uosm > 500 : 腎前性疑い (濃縮能維持)")
+                is_prerenal = True
+            elif uosm < 350:
+                findings.append("Uosm < 350 : 濃縮能低下 (ATN等)")
+                is_atn = True
+                
+        if findings:
+            for f in findings: st.info(f)
+            
+            # Conclusion
+            if is_prerenal and not is_atn:
+                st.success("総合判定: 腎前性 を強く示唆")
+            elif is_atn and not is_prerenal:
+                st.error("総合判定: 腎性 (ATN) を強く示唆")
+            else:
+                st.warning("総合判定: 混在 または 鑑別困難")
+        else:
+            st.write("データ不足のため判定できません")
+
+
+def render_na_diff():
+    st.header("🧂 低Na鑑別フロー")
+    
+    st.markdown("### 【Step 1】血清浸透圧 (Posm)")
+    st.write("・**高値 (>295)** → 高血糖、マンニトール投与など")
+    st.write("・**正常 (280-295)** → 偽性低Na血症 (高脂血症、高蛋白)")
+    st.write("・**低値 (<275)** → 真の低Na血症 ⇒ Step 2へ")
+    
+    st.markdown("---")
+    st.markdown("### 【Step 2】尿浸透圧 (Uosm)")
+    st.write("・**< 100 mOsm/kg** → 水過剰摂取 (心因性多飲、ビール多飲)")
+    st.write("・**> 100 mOsm/kg** → ADH分泌あり (ADH作用過剰) ⇒ Step 3へ")
+    
+    st.markdown("---")
+    st.markdown("### 【Step 3】尿中Na濃度 (U_Na)")
+    st.write("・**< 20 mmol/L** → 有効循環血漿量低下 (心不全、肝硬変、ネフローゼ、脱水)")
+    st.write("・**> 20-30 mmol/L** → SIADH、腎性塩類喪失、利尿薬、副腎不全、甲状腺機能低下")
+
 
 def render_calc_tools():
     st.header("⚗️ 単位変換")
     with st.form("calc_form"):
         ion = st.selectbox("対象", ["Na", "K", "Cl", "Ca", "Mg", "P"])
         val = st.number_input("値", min_value=0.0, step=0.1, format="%.1f", value=None)
+        st.caption("例: 135.0")
         unit = st.radio("入力単位", ["mg/dL", "mmol/L"], horizontal=True)
         submitted = st.form_submit_button("変換")
         
@@ -480,26 +492,17 @@ def render_calc_tools():
         mw = MOL_WEIGHTS[ion]
         res_mg = val if unit=="mg/dL" else (val * mw)/10
         res_mmol = (val * 10)/mw if unit=="mg/dL" else val
-        st.write(f"{res_mg:.2f} mg/dL | {res_mmol:.2f} mmol/L")
-
-def render_na_diff():
-    st.header("🧂 低Na鑑別")
-    st.write("Step by Step フロー")
-    # Simple static content logic similar to before, inputs kept minimal or none needed here
-    step = st.selectbox("Step", ["1. Posm", "2. Uosm", "3. Volume"])
-    if step[0]=="1": st.info("Check Posm (Hypotonic?)")
-    elif step[0]=="2": st.info("Check Uosm (>100?)")
-    elif step[0]=="3": st.info("Check Volume Status")
+        st.success(f"{res_mg:.2f} mg/dL  /  {res_mmol:.2f} mmol/L")
 
 def render_export_import():
     st.header("💾 保存・読込")
     st.markdown("現在の入力値をJSONで保存")
     
-    # Export keys to clean names (removed _str suffixes)
     export_keys = [
         "gamma_preset", "gamma_mg", "gamma_ml", "gamma_flow", "gamma_wt",
         "ccr_age", "ccr_wt", "ccr_scr", "ccr_sex",
-        "ab_ph", "ab_pco2", "ab_hco3", "ab_na", "ab_cl", "ab_alb"
+        "ab_ph", "ab_pco2", "ab_hco3", "ab_na", "ab_cl", "ab_alb",
+        "renal_una", "renal_pna", "renal_ucr", "renal_pcr", "renal_bun", "renal_uosm"
     ]
     data = {k: st.session_state.get(k) for k in export_keys}
     st.download_button("JSON保存", json.dumps(data, ensure_ascii=False, indent=2), "icu_draft.json")
